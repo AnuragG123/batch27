@@ -1,172 +1,91 @@
-resource "aws_redshift_cluster" "redshift" {
+Certainly! You can use AWS Lambda and CloudWatch Events to achieve this. Here's a basic example using Terraform:
 
-  // Redshift cluster configuration
-
-
-
-  // IAM role for Redshift cluster
-
-  iam_roles = [aws_iam_role.redshift_role.arn]
-
+```hcl
+provider "aws" {
+  region = "your_aws_region"
 }
 
+resource "aws_lambda_function" "cleanup_function" {
+  filename      = "cleanup_lambda.zip"
+  function_name = "cleanupLambdaFunction"
+  role          = aws_iam_role.lambda_execution_role.arn
+  handler       = "index.handler"
+  runtime       = "nodejs14.x"
+}
 
-
-resource "aws_iam_role" "redshift_role" {
-
-  name = "redshift-role"
-
-
-
-  // Attach necessary policies to the role
-
-  // For example:
+resource "aws_iam_role" "lambda_execution_role" {
+  name = "lambda_execution_role"
 
   assume_role_policy = <<EOF
-
 {
-
   "Version": "2012-10-17",
-
   "Statement": [
-
     {
-
+      "Action": "sts:AssumeRole",
       "Effect": "Allow",
-
       "Principal": {
-
-        "Service": "redshift.amazonaws.com"
-
-      },
-
-      "Action": "sts:AssumeRole"
-
+        "Service": "lambda.amazonaws.com"
+      }
     }
-
   ]
-
 }
-
 EOF
+}
 
+resource "aws_lambda_permission" "allow_cloudwatch" {
+  statement_id  = "AllowExecutionFromCloudWatch"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.cleanup_function.function_name
+  principal     = "events.amazonaws.com"
+}
 
-
-  // Attach policies to the role
-
-  // For example:
-
-  policy {
-
-    policy = jsonencode({
-
-      "Version": "2012-10-17",
-
-      "Statement": [
-
-        {
-
-          "Effect": "Allow",
-
-          "Action": [
-
-            "redshift:DescribeClusters",
-
-            "redshift:DescribeCluster*",
-
-            // Add other necessary actions for Redshift
-
-          ],
-
-          "Resource": "*"
-
-        }
-
-      ]
-
-    })
-
+resource "aws_cloudwatch_event_rule" "delete_old_data_rule" {
+  name        = "delete_old_data_rule"
+  description = "Rule to trigger Lambda for deleting old S3 data"
+  event_pattern = <<EOF
+{
+  "source": ["aws.s3"],
+  "detail": {
+    "eventName": ["DeleteObject"]
+  },
+  "resources": ["arn:aws:s3:::your_s3_bucket_name"],
+  "detail": {
+    "requestParameters": {
+      "bucketName": ["your_s3_bucket_name"],
+      "key": [{"prefix": ["converted"]}]
+    }
   }
-
+}
+EOF
 }
 
-
-
-output "redshift_cluster_id" {
-
-  value = aws_redshift_cluster.redshift.id
-
+resource "aws_cloudwatch_event_target" "invoke_lambda" {
+  rule      = aws_cloudwatch_event_rule.delete_old_data_rule.name
+  target_id = "invoke_lambda"
+  arn       = aws_lambda_function.cleanup_function.arn
 }
 
-
-
-resource "aws_secretsmanager_secret" "secrets_manager" {
-
-  // Secrets Manager secret configuration
-
-
-
-  // IAM policy for Secrets Manager secret
-
-  policy = data.aws_iam_policy_document.secrets_manager_policy.json
-
+data "archive_file" "lambda_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/lambda_code"
+  output_path = "${path.module}/cleanup_lambda.zip"
 }
 
-
-
-data "aws_iam_policy_document" "secrets_manager_policy" {
-
-  statement {
-
-    actions = [
-
-      "secretsmanager:GetSecretValue",
-
-      "secretsmanager:DescribeSecret",
-
-      // Add other necessary actions for Secrets Manager
-
-    ]
-
-
-
-    resources = [
-
-      aws_secretsmanager_secret.secrets_manager.arn,
-
-    ]
-
-  }
-
+// Define the Lambda function code in a separate folder
+data "aws_s3_bucket_object" "lambda_code" {
+  bucket = "your_s3_bucket_name"
+  key    = "lambda_code.zip"
 }
 
-
-
-output "secrets_manager_secret_id" {
-
-  value = aws_secretsmanager_secret.secrets_manager.id
-
+resource "aws_s3_bucket_object" "upload_lambda_code" {
+  bucket = "your_s3_bucket_name"
+  key    = "lambda_code.zip"
+  source = data.aws_s3_bucket_object.lambda_code.source
 }
+```
 
+This Terraform script sets up an AWS Lambda function triggered by CloudWatch Events whenever objects are deleted in the specified S3 bucket. The Lambda function checks if the deleted object has the prefix 'converted' and if it's older than 8 years. If so, it performs the deletion.
 
+Make sure to replace `"your_s3_bucket_name"` with your actual S3 bucket name and adjust other parameters accordingly. Also, create a ZIP file containing your Lambda function code and place it in an S3 bucket.
 
-
-
-resource "aws_lambda_function" "lambda" {
-
-  // Lambda function configuration
-
-
-
-  // IAM role for Lambda function
-
-  role = aws_iam_role.lambda_role.arn
-
-
-
-  // ... Other Lambda function configurations
-
-}
-
-
-
+After deploying this Terraform configuration, you'll need to set up the Lambda function code to handle the deletion logic and send notifications.
