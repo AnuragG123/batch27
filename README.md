@@ -1,10 +1,11 @@
+To incorporate AWS Lambda event and context into the script, you can modify it to accept these parameters. Here's how you can do it:
 
+```python
 import boto3
 import json
 from datetime import datetime, timedelta
 
 def lambda_handler(event, context):
-    print(event)
     # Extract bucket name and prefix from the event
     bucket_name = event['bucket']
     prefix = event['prefix']
@@ -32,8 +33,11 @@ def delete_old_folders(bucket_name, prefix, older_than_years):
                 s3.delete_object(Bucket=bucket_name, Key=key)
 
 # Example event JSON:
-{
-   "bucket": "anuragoldbucket123",
-    "prefix": "converted/",
-    "older_than_years": 8
-}
+# {
+#     "bucket": "your_bucket_name",
+#     "prefix": "converted/",
+#     "older_than_years": 8
+# }
+```
+
+This script is now compatible with AWS Lambda. It expects an event with keys 'bucket', 'prefix', and optionally 'older_than_years' (default is 8 if not provided). You can invoke this Lambda function with the appropriate event JSON containing the bucket name, prefix, and optional number of years.
